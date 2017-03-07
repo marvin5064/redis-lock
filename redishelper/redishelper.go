@@ -28,6 +28,7 @@ type Client struct {
 type RedisPool interface {
 	Get() redis.Conn
 	GetDB(databaseID int) RedisClient
+	Close()
 }
 
 type RedisClient interface {
@@ -61,6 +62,10 @@ func (p *Pool) GetDB(databaseID int) RedisClient {
 	return &Client{
 		Conn: conn,
 	}
+}
+
+func (p *Pool) Close() {
+	p.pool.Close()
 }
 
 func (p *Pool) Get() redis.Conn {
