@@ -1,11 +1,10 @@
 package redishelper
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/garyburd/redigo/redis"
-	redsync "gopkg.in/redsync.v1"
+	redsync "github.com/marvin5064/redsync"
 )
 
 const (
@@ -18,7 +17,7 @@ const (
 )
 
 type Pool struct {
-	pool redis.Pool
+	pool *redis.Pool
 }
 
 type Client struct {
@@ -38,7 +37,7 @@ type RedisClient interface {
 
 func NewRedisPool(server string) *Pool {
 	return &Pool{
-		pool: redis.Pool{
+		pool: &redis.Pool{
 			MaxIdle:     maxIdleConns,
 			IdleTimeout: idleTimeout,
 			Dial: func() (redis.Conn, error) {
@@ -52,6 +51,24 @@ func NewRedisPool(server string) *Pool {
 				_, err := c.Do("PING")
 				return err
 			},
+		},
+	}
+}
+
+func NewRedisPool1(server string) *redis.Pool {
+	return &redis.Pool{
+		MaxIdle:     maxIdleConns,
+		IdleTimeout: idleTimeout,
+		Dial: func() (redis.Conn, error) {
+			c, err := redis.Dial("tcp", server)
+			if err != nil {
+				return nil, err
+			}
+			return c, err
+		},
+		TestOnBorrow: func(c redis.Conn, t time.Time) error {
+			_, err := c.Do("PING")
+			return err
 		},
 	}
 }
@@ -81,24 +98,23 @@ type locker struct {
 }
 
 type SharedLock interface {
-	Unlock()
+	Unlock() bool
 }
 
-func NewLock(redis RedisPool, name string) (SharedLock, error) {
+func NewLock(redis RedisClient, name string) (SharedLock, error) {
 	mutex := redsync.New(
-		[]redsync.Pool{redis}).NewMutex(
+		[]redsync.RedisConnWrapper{redis}).NewMutex(
 		name,
 		redsync.SetExpiry(lockExpriyTime),
 		redsync.SetTries(int((lockExpriyTime-bufferTimeForError)/retryDelayTime)),
 		redsync.SetRetryDelay(retryDelayTime),
 	)
-	fmt.Println("retry ", int((lockExpriyTime-bufferTimeForError)/retryDelayTime))
 	err := mutex.Lock()
 	return &locker{
 		mutex: mutex,
 	}, err
 }
 
-func (l *locker) Unlock() {
-	l.mutex.Unlock()
+func (l *locker) Unlock() bool {
+	return l.mutex.Unlock()
 }
